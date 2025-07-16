@@ -1,79 +1,92 @@
 import streamlit as st
-import csv
+import pandas as pd
 import os
 from datetime import datetime, timedelta
 
-# Caminho completo do arquivo no OneDrive
-ARQUIVO_CSV = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\reservas.csv"
+CAMINHO_PLANILHA = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\Controle de Vagas Refeitorio1.xlsx"
+HORARIOS = ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30']
+VAGAS_POR_HORARIO = 100
 
-# Cria o arquivo se ele não existir
-if not os.path.exists(ARQUIVO_CSV):
-    with open(ARQUIVO_CSV, mode='w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Matrícula", "Nome", "Departamento", "Email", "Horário", "Data"])
-
-st.title("Reserva de Horário")
+st.title("📅 Formulário de Reserva de Horário")
 
 matricula = st.text_input("Matrícula")
 nome = st.text_input("Nome")
 departamento = st.text_input("Departamento")
 email = st.text_input("Email")
+opcao_semana = st.checkbox("Reservar a semana toda no mesmo horário?")
 
-# Selecionar um único dia ou semana inteira
-modo_semana = st.checkbox("Reservar a semana toda (mesmo horário todos os dias úteis)")
+# Gerar datas disponíveis a partir de amanhã (dias úteis)
+def dias_uteis_a_partir_de_amanha(qtd=5):
+    hoje = datetime.now().date()
+    datas = []
+    dia = hoje + timedelta(days=1)
+    while len(datas) < qtd:
+        if dia.weekday() < 5:
+            datas.append(dia)
+        dia += timedelta(days=1)
+    return datas
 
-# Gera horários de 10:00 às 13:30 (de 30 em 30 min)
-horarios = [f"{h:02d}:{m:02d}" for h in range(10, 14) for m in (0, 30)]
-horario_escolhido = st.selectbox("Escolha o horário", horarios)
+dias = dias_uteis_a_partir_de_amanha()
 
-# Gera a(s) data(s)
-hoje = datetime.now().date()
-amanha = hoje + timedelta(days=1)
-
-# Verifica se o usuário escolheu reservar a semana toda
-if modo_semana:
-    datas_selecionadas = [
-        amanha + timedelta(days=i) for i in range(7)
-        if (amanha + timedelta(days=i)).weekday() < 5  # Só dias úteis
-    ]
+if opcao_semana:
+    data_selecionada = dias  # todas as datas úteis
 else:
-    data_unica = st.date_input("Escolha a data", amanha, min_value=amanha)
-    datas_selecionadas = [data_unica]
+    data_unica = st.date_input("Escolha o dia da reserva", dias[0], min_value=dias[0], max_value=dias[-1])
+    data_selecionada = [data_unica]
 
-def carregar_reservas():
-    if not os.path.exists(ARQUIVO_CSV):
-        return []
-    with open(ARQUIVO_CSV, mode='r', encoding='utf-8') as f:
-        return list(csv.reader(f))[1:]
+horario = st.radio("Horário", HORARIOS)
+botao = st.button("Reservar")
 
-def salvar_reserva(matricula, nome, depto, email, horario, data):
-    with open(ARQUIVO_CSV, mode='a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow([matricula, nome, depto, email, horario, data])
+def ler_reservas():
+    if os.path.exists(CAMINHO_PLANILHA):
+        return pd.read_excel(CAMINHO_PLANILHA)
+    return pd.DataFrame(columns=["Matrícula", "Nome", "Departamento", "Email", "Horário", "Data"])
 
-def contar_reservas(data, horario):
-    reservas = carregar_reservas()
-    return sum(1 for r in reservas if r[4] == horario and r[5] == str(data))
+def salvar_reservas(df):
+    df.to_excel(CAMINHO_PLANILHA, index=False)
 
-if st.button("Reservar"):
+def contar_reservas_por_horario(data):
+    df = ler_reservas()
+    contagem = df[df['Data'] == pd.to_datetime(data)].groupby("Horário").size().to_dict()
+    return contagem
+
+def ja_tem_reserva(matricula, data):
+    df = ler_reservas()
+    return not df[(df["Matrícula"] == matricula) & (df["Data"] == pd.to_datetime(data))].empty
+
+if botao:
     if not all([matricula, nome, departamento, email]):
-        st.warning("Por favor, preencha todos os campos antes de reservar.")
+        st.warning("⚠️ Por favor, preencha todos os campos antes de reservar.")
     else:
-        reservas = carregar_reservas()
-        datas_confirmadas = []
-        datas_recusadas = []
+        df_existente = ler_reservas()
+        novas_reservas = []
+        ja_reservados = []
 
-        for data in datas_selecionadas:
-            ja_reservou = any(r[0] == matricula and r[5] == str(data) for r in reservas)
-            if ja_reservou:
-                datas_recusadas.append(data)
-            elif contar_reservas(data, horario_escolhido) >= 100:
-                datas_recusadas.append(data)
-            else:
-                salvar_reserva(matricula, nome, departamento, email, horario_escolhido, data)
-                datas_confirmadas.append(data)
+        for data in data_selecionada:
+            reservas_no_dia = contar_reservas_por_horario(data).get(horario, 0)
 
-        if datas_confirmadas:
-            st.success(f"Reservas confirmadas para os dias: {', '.join(str(d) for d in datas_confirmadas)} no horário {horario_escolhido}.")
-        if datas_recusadas:
-            st.error(f"Você já tinha reserva ou o horário estava cheio nos dias: {', '.join(str(d) for d in datas_recusadas)}.")
+            if reservas_no_dia >= VAGAS_POR_HORARIO:
+                ja_reservados.append(str(data))
+                continue
+
+            if ja_tem_reserva(matricula, data):
+                ja_reservados.append(str(data))
+                continue
+
+            novas_reservas.append({
+                "Matrícula": matricula,
+                "Nome": nome,
+                "Departamento": departamento,
+                "Email": email,
+                "Horário": horario,
+                "Data": data
+            })
+
+        if novas_reservas:
+            df_atualizado = pd.concat([df_existente, pd.DataFrame(novas_reservas)], ignore_index=True)
+            salvar_reservas(df_atualizado)
+            datas_confirmadas = ", ".join([str(r["Data"]) for r in novas_reservas])
+            st.success(f"✅ Reservas confirmadas para os dias: {datas_confirmadas} no horário {horario}.")
+        if ja_reservados:
+            dias_negados = ", ".join(ja_reservados)
+            st.warning(f"⚠️ Você já tinha reserva ou o horário está lotado nos dias: {dias_negados}. Estes não foram reservados novamente.")
