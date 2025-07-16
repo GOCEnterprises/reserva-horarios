@@ -1,40 +1,40 @@
 import streamlit as st
-import csv
-import os
 from datetime import datetime, timedelta
+import os
+import pandas as pd
+from openpyxl import load_workbook
 
-ARQUIVO_CSV = "reservas.csv"
+CAMINHO_PLANILHA = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\Controle de Vagas Refeitorio1.xlsx"
+ABA_RESERVAS = "reservas"
 
-def criar_arquivo_se_nao_existir():
-    if not os.path.exists(ARQUIVO_CSV):
-        with open(ARQUIVO_CSV, mode='w', newline='', encoding='utf-8') as arquivo:
-            writer = csv.writer(arquivo)
-            writer.writerow(["Matricula", "Nome", "Departamento", "Email", "Horario", "Data"])
+def salvar_reserva_na_planilha(matricula, nome, departamento, email, horario, data):
+    nova_linha = pd.DataFrame([[matricula, nome, departamento, email, horario, data]],
+                              columns=["Matricula", "Nome", "Departamento", "Email", "Horario", "Data"])
+    if not os.path.exists(CAMINHO_PLANILHA):
+        nova_linha.to_excel(CAMINHO_PLANILHA, sheet_name=ABA_RESERVAS, index=False)
+    else:
+        with pd.ExcelWriter(CAMINHO_PLANILHA, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+            df_existente = pd.read_excel(CAMINHO_PLANILHA, sheet_name=ABA_RESERVAS)
+            df_novo = pd.concat([df_existente, nova_linha], ignore_index=True)
+            writer.book.remove(writer.book[ABA_RESERVAS])
+            df_novo.to_excel(writer, sheet_name=ABA_RESERVAS, index=False)
+
+def carregar_reservas():
+    if not os.path.exists(CAMINHO_PLANILHA):
+        return []
+    df = pd.read_excel(CAMINHO_PLANILHA, sheet_name=ABA_RESERVAS)
+    return df.to_dict(orient='records')
 
 def verificar_reserva_existente(matricula, data):
-    if not os.path.exists(ARQUIVO_CSV):
-        return False
-    with open(ARQUIVO_CSV, mode='r', encoding='utf-8') as arquivo:
-        reader = csv.reader(arquivo)
-        next(reader)
-        for linha in reader:
-            mat_lida, *_ , data_lida = linha
-            if mat_lida == matricula and data_lida == data:
-                return True
+    reservas = carregar_reservas()
+    for reserva in reservas:
+        if str(reserva['Matricula']) == matricula and str(reserva['Data'])[:10] == data:
+            return True
     return False
 
 def contar_reservas(horario, data):
-    if not os.path.exists(ARQUIVO_CSV):
-        return 0
-    count = 0
-    with open(ARQUIVO_CSV, mode='r', encoding='utf-8') as arquivo:
-        reader = csv.reader(arquivo)
-        next(reader)
-        for linha in reader:
-            _, _, _, _, horario_lido, data_lida = linha
-            if horario_lido == horario and data_lida == data:
-                count += 1
-    return count
+    reservas = carregar_reservas()
+    return sum(1 for reserva in reservas if reserva['Horario'] == horario and str(reserva['Data'])[:10] == data)
 
 def gerar_horarios():
     horarios = []
@@ -102,8 +102,6 @@ if st.button("Reservar"):
     if not all([matricula, nome, departamento, email]):
         st.error("Por favor, preencha todos os campos antes de reservar.")
     else:
-        criar_arquivo_se_nao_existir()
-
         if semana_toda:
             dias = dias_uteis_semana(data_escolhida)
             reservas_feitas = []
@@ -116,10 +114,8 @@ if st.button("Reservar"):
                 elif contar_reservas(horario_escolhido, data_str) >= 100:
                     continue
                 else:
-                    with open(ARQUIVO_CSV, mode='a', newline='', encoding='utf-8') as arquivo:
-                        writer = csv.writer(arquivo)
-                        writer.writerow([matricula, nome, departamento, email, horario_escolhido, data_str])
-                        reservas_feitas.append(data_str)
+                    salvar_reserva_na_planilha(matricula, nome, departamento, email, horario_escolhido, data_str)
+                    reservas_feitas.append(data_str)
 
             if reservas_feitas:
                 st.success(f"Reservas confirmadas para os dias: {', '.join(reservas_feitas)} no horário {horario_escolhido}.")
@@ -134,7 +130,5 @@ if st.button("Reservar"):
             elif contar_reservas(horario_escolhido, data_str) >= 100:
                 st.warning(f"O horário {horario_escolhido} do dia {data_str} já está lotado.")
             else:
-                with open(ARQUIVO_CSV, mode='a', newline='', encoding='utf-8') as arquivo:
-                    writer = csv.writer(arquivo)
-                    writer.writerow([matricula, nome, departamento, email, horario_escolhido, data_str])
+                salvar_reserva_na_planilha(matricula, nome, departamento, email, horario_escolhido, data_str)
                 st.success(f"Reserva confirmada para {nome} às {horario_escolhido} no dia {data_str}.")
