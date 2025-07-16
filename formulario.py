@@ -1,92 +1,140 @@
 import streamlit as st
-import pandas as pd
+import csv
 import os
 from datetime import datetime, timedelta
 
-CAMINHO_PLANILHA = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\Controle de Vagas Refeitorio1.xlsx"
-HORARIOS = ['10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30']
-VAGAS_POR_HORARIO = 100
+ARQUIVO_CSV = "reservas.csv"
 
-st.title("📅 Formulário de Reserva de Horário")
+def criar_arquivo_se_nao_existir():
+    if not os.path.exists(ARQUIVO_CSV):
+        with open(ARQUIVO_CSV, mode='w', newline='', encoding='utf-8') as arquivo:
+            writer = csv.writer(arquivo)
+            writer.writerow(["Matricula", "Nome", "Departamento", "Email", "Horario", "Data"])
+
+def verificar_reserva_existente(matricula, data):
+    if not os.path.exists(ARQUIVO_CSV):
+        return False
+    with open(ARQUIVO_CSV, mode='r', encoding='utf-8') as arquivo:
+        reader = csv.reader(arquivo)
+        next(reader)
+        for linha in reader:
+            mat_lida, *_ , data_lida = linha
+            if mat_lida == matricula and data_lida == data:
+                return True
+    return False
+
+def contar_reservas(horario, data):
+    if not os.path.exists(ARQUIVO_CSV):
+        return 0
+    count = 0
+    with open(ARQUIVO_CSV, mode='r', encoding='utf-8') as arquivo:
+        reader = csv.reader(arquivo)
+        next(reader)
+        for linha in reader:
+            _, _, _, _, horario_lido, data_lida = linha
+            if horario_lido == horario and data_lida == data:
+                count += 1
+    return count
+
+def gerar_horarios():
+    horarios = []
+    hora = datetime.strptime("10:00", "%H:%M")
+    fim = datetime.strptime("13:30", "%H:%M")
+    while hora <= fim:
+        horarios.append(hora.strftime("%H:%M"))
+        hora += timedelta(minutes=30)
+    return horarios
+
+def dias_uteis_semana(date):
+    inicio = date - timedelta(days=date.weekday())
+    dias = [inicio + timedelta(days=i) for i in range(5)]
+    return dias
+
+def formatar_vagas_cor(vagas, horario):
+    if vagas > 50:
+        cor = "green"
+        emoji = "🟢"
+    elif 11 <= vagas <= 50:
+        cor = "orange"
+        emoji = "🟡"
+    else:
+        cor = "red"
+        emoji = "🔴"
+    return f"<span style='color:{cor}'>{emoji} {horario} — {vagas} vagas restantes</span>"
+
+# ========== INTERFACE ==========
+
+st.set_page_config(page_title="Formulário de Reserva", layout="centered")
+st.markdown("<h2 style='text-align: center; color: #444;'>Formulário de Reserva de Horário</h2>", unsafe_allow_html=True)
 
 matricula = st.text_input("Matrícula")
 nome = st.text_input("Nome")
 departamento = st.text_input("Departamento")
 email = st.text_input("Email")
-opcao_semana = st.checkbox("Reservar a semana toda no mesmo horário?")
 
-# Gerar datas disponíveis a partir de amanhã (dias úteis)
-def dias_uteis_a_partir_de_amanha(qtd=5):
-    hoje = datetime.now().date()
-    datas = []
-    dia = hoje + timedelta(days=1)
-    while len(datas) < qtd:
-        if dia.weekday() < 5:
-            datas.append(dia)
-        dia += timedelta(days=1)
-    return datas
+horarios = gerar_horarios()
+amanha = datetime.today().date() + timedelta(days=1)
+data_escolhida = st.date_input("Escolha a data da reserva", min_value=amanha)
 
-dias = dias_uteis_a_partir_de_amanha()
+semana_toda = st.checkbox("Reservar a semana inteira (segunda a sexta), no mesmo horário")
 
-if opcao_semana:
-    data_selecionada = dias  # todas as datas úteis
+# === Mostrar VAGAS DISPONÍVEIS ===
+st.subheader("Vagas disponíveis:")
+
+if semana_toda:
+    dias_semana = dias_uteis_semana(data_escolhida)
+    for dia in dias_semana:
+        st.markdown(f"**{dia.strftime('%A (%d/%m/%Y)')}**")
+        for h in horarios:
+            vagas = 100 - contar_reservas(h, dia.strftime("%Y-%m-%d"))
+            st.markdown(formatar_vagas_cor(vagas, h), unsafe_allow_html=True)
 else:
-    data_unica = st.date_input("Escolha o dia da reserva", dias[0], min_value=dias[0], max_value=dias[-1])
-    data_selecionada = [data_unica]
+    st.markdown(f"**{data_escolhida.strftime('%A (%d/%m/%Y)')}**")
+    for h in horarios:
+        vagas = 100 - contar_reservas(h, data_escolhida.strftime("%Y-%m-%d"))
+        st.markdown(formatar_vagas_cor(vagas, h), unsafe_allow_html=True)
 
-horario = st.radio("Horário", HORARIOS)
-botao = st.button("Reservar")
+# === Seleção do horário ===
+horario_escolhido = st.selectbox("Escolha um horário para reserva", horarios)
 
-def ler_reservas():
-    if os.path.exists(CAMINHO_PLANILHA):
-        return pd.read_excel(CAMINHO_PLANILHA)
-    return pd.DataFrame(columns=["Matrícula", "Nome", "Departamento", "Email", "Horário", "Data"])
-
-def salvar_reservas(df):
-    df.to_excel(CAMINHO_PLANILHA, index=False)
-
-def contar_reservas_por_horario(data):
-    df = ler_reservas()
-    contagem = df[df['Data'] == pd.to_datetime(data)].groupby("Horário").size().to_dict()
-    return contagem
-
-def ja_tem_reserva(matricula, data):
-    df = ler_reservas()
-    return not df[(df["Matrícula"] == matricula) & (df["Data"] == pd.to_datetime(data))].empty
-
-if botao:
+# === Botão de reserva ===
+if st.button("Reservar"):
     if not all([matricula, nome, departamento, email]):
-        st.warning("⚠️ Por favor, preencha todos os campos antes de reservar.")
+        st.error("Por favor, preencha todos os campos antes de reservar.")
     else:
-        df_existente = ler_reservas()
-        novas_reservas = []
-        ja_reservados = []
+        criar_arquivo_se_nao_existir()
 
-        for data in data_selecionada:
-            reservas_no_dia = contar_reservas_por_horario(data).get(horario, 0)
+        if semana_toda:
+            dias = dias_uteis_semana(data_escolhida)
+            reservas_feitas = []
+            reservas_existentes = []
 
-            if reservas_no_dia >= VAGAS_POR_HORARIO:
-                ja_reservados.append(str(data))
-                continue
+            for dia in dias:
+                data_str = dia.strftime("%Y-%m-%d")
+                if verificar_reserva_existente(matricula, data_str):
+                    reservas_existentes.append(data_str)
+                elif contar_reservas(horario_escolhido, data_str) >= 100:
+                    continue
+                else:
+                    with open(ARQUIVO_CSV, mode='a', newline='', encoding='utf-8') as arquivo:
+                        writer = csv.writer(arquivo)
+                        writer.writerow([matricula, nome, departamento, email, horario_escolhido, data_str])
+                        reservas_feitas.append(data_str)
 
-            if ja_tem_reserva(matricula, data):
-                ja_reservados.append(str(data))
-                continue
-
-            novas_reservas.append({
-                "Matrícula": matricula,
-                "Nome": nome,
-                "Departamento": departamento,
-                "Email": email,
-                "Horário": horario,
-                "Data": data
-            })
-
-        if novas_reservas:
-            df_atualizado = pd.concat([df_existente, pd.DataFrame(novas_reservas)], ignore_index=True)
-            salvar_reservas(df_atualizado)
-            datas_confirmadas = ", ".join([str(r["Data"]) for r in novas_reservas])
-            st.success(f"✅ Reservas confirmadas para os dias: {datas_confirmadas} no horário {horario}.")
-        if ja_reservados:
-            dias_negados = ", ".join(ja_reservados)
-            st.warning(f"⚠️ Você já tinha reserva ou o horário está lotado nos dias: {dias_negados}. Estes não foram reservados novamente.")
+            if reservas_feitas:
+                st.success(f"Reservas confirmadas para os dias: {', '.join(reservas_feitas)} no horário {horario_escolhido}.")
+            if reservas_existentes:
+                st.warning(f"Você já tinha reserva nos dias: {', '.join(reservas_existentes)}.")
+            if not reservas_feitas and not reservas_existentes:
+                st.warning("Nenhuma reserva foi feita. Todos os horários estavam lotados ou você já tinha reserva.")
+        else:
+            data_str = data_escolhida.strftime("%Y-%m-%d")
+            if verificar_reserva_existente(matricula, data_str):
+                st.warning(f"Você já tem uma reserva para o dia {data_str}.")
+            elif contar_reservas(horario_escolhido, data_str) >= 100:
+                st.warning(f"O horário {horario_escolhido} do dia {data_str} já está lotado.")
+            else:
+                with open(ARQUIVO_CSV, mode='a', newline='', encoding='utf-8') as arquivo:
+                    writer = csv.writer(arquivo)
+                    writer.writerow([matricula, nome, departamento, email, horario_escolhido, data_str])
+                st.success(f"Reserva confirmada para {nome} às {horario_escolhido} no dia {data_str}.")
