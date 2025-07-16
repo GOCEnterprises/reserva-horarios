@@ -1,46 +1,44 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
 
-ARQUIVO_CSV = "reservas.csv"
+# Caminho para o arquivo CSV
+csv_path = os.path.join("C:/Users/r958351/OneDrive - voestalpine/CONTROLES/reserva", "reservas.csv")
 
-st.set_page_config(page_title="Painel da Chefia", layout="wide")
-st.title("Painel da Chefia - Reservas ADM")
+# Título do painel
+st.title("📊 Painel de Reservas - Chefia")
 
 # Verifica se o arquivo existe
-if not os.path.exists(ARQUIVO_CSV):
-    st.error("Nenhuma reserva encontrada ainda!")
-else:
-    # Lê o CSV
-    df = pd.read_csv(ARQUIVO_CSV)
+if os.path.exists(csv_path):
+    df = pd.read_csv(csv_path)
 
-    # Converte a coluna de data para datetime
-    df['Data'] = pd.to_datetime(df['Data'], format="%Y-%m-%d")
+    # Converte a coluna "Data" para apenas a data (sem hora)
+    df["Data"] = pd.to_datetime(df["Data"]).dt.date
 
-    # Filtros
-    st.sidebar.header("Filtros")
+    # Filtro por data
+    data_filtro = st.date_input("Filtrar por data (opcional)")
 
-    data_inicio = st.sidebar.date_input("Data inicial", value=df["Data"].min().date())
-    data_fim = st.sidebar.date_input("Data final", value=df["Data"].max().date())
-
-    # Aplica os filtros
-    df_filtrado = df[(df["Data"] >= pd.to_datetime(data_inicio)) & (df["Data"] <= pd.to_datetime(data_fim))]
-
-    if df_filtrado.empty:
-        st.warning("Nenhuma reserva encontrada nesse período.")
+    if data_filtro:
+        df_filtrado = df[df["Data"] == data_filtro]
+        if not df_filtrado.empty:
+            st.subheader(f"📅 Reservas para {data_filtro.strftime('%d/%m/%Y')}")
+            st.dataframe(df_filtrado)
+        else:
+            st.warning("⚠️ Nenhuma reserva para a data selecionada.")
     else:
-        st.subheader("Reservas encontradas")
+        st.subheader("📋 Todas as Reservas")
+        st.dataframe(df)
 
-        # Mostra a tabela
-        st.dataframe(df_filtrado.sort_values(by=["Data", "Horario"]))
+    # Botão para download do CSV filtrado
+    if not df.empty:
+        csv_export = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="⬇️ Baixar todas as reservas em CSV",
+            data=csv_export,
+            file_name="reservas_completas.csv",
+            mime="text/csv"
+        )
 
-        # Contagem por horário
-        st.subheader("Total de reservas por horário")
-        grafico = df_filtrado.groupby("Horario").size().reset_index(name="Total de Reservas")
-        st.bar_chart(data=grafico, x="Horario", y="Total de Reservas")
+else:
+    st.warning("⚠️ Nenhuma reserva encontrada ainda!")
 
-        # Exportar
-        st.subheader("Exportar reservas")
-        csv_exportado = df_filtrado.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Baixar CSV filtrado", data=csv_exportado, file_name="reservas_filtradas.csv", mime="text/csv")
