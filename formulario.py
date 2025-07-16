@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 
 ARQUIVO_CSV = "reservas.csv"
 
-# Função para garantir que o arquivo exista
 def criar_arquivo_se_nao_existir():
     if not os.path.exists(ARQUIVO_CSV):
         with open(ARQUIVO_CSV, mode='w', newline='', encoding='utf-8') as arquivo:
@@ -19,7 +18,7 @@ def verificar_reserva_existente(matricula, data):
         reader = csv.reader(arquivo)
         next(reader)
         for linha in reader:
-            mat_lida, _, _, _, _, data_lida = linha
+            mat_lida, *_ , data_lida = linha
             if mat_lida == matricula and data_lida == data:
                 return True
     return False
@@ -51,6 +50,18 @@ def dias_uteis_semana(date):
     dias = [inicio + timedelta(days=i) for i in range(5)]
     return dias
 
+def formatar_vagas_cor(vagas, horario):
+    if vagas > 50:
+        cor = "green"
+        emoji = "🟢"
+    elif 11 <= vagas <= 50:
+        cor = "orange"
+        emoji = "🟡"
+    else:
+        cor = "red"
+        emoji = "🔴"
+    return f"<span style='color:{cor}'>{emoji} {horario} — {vagas} vagas restantes</span>"
+
 # ========== INTERFACE ==========
 
 st.set_page_config(page_title="Formulário de Reserva", layout="centered")
@@ -62,7 +73,6 @@ departamento = st.text_input("Departamento")
 email = st.text_input("Email")
 
 horarios = gerar_horarios()
-
 amanha = datetime.today().date() + timedelta(days=1)
 data_escolhida = st.date_input("Escolha a data da reserva", min_value=amanha)
 
@@ -77,17 +87,17 @@ if semana_toda:
         st.markdown(f"**{dia.strftime('%A (%d/%m/%Y)')}**")
         for h in horarios:
             vagas = 100 - contar_reservas(h, dia.strftime("%Y-%m-%d"))
-            st.write(f"🕒 {h} — {vagas} vagas restantes")
+            st.markdown(formatar_vagas_cor(vagas, h), unsafe_allow_html=True)
 else:
     st.markdown(f"**{data_escolhida.strftime('%A (%d/%m/%Y)')}**")
     for h in horarios:
         vagas = 100 - contar_reservas(h, data_escolhida.strftime("%Y-%m-%d"))
-        st.write(f"🕒 {h} — {vagas} vagas restantes")
+        st.markdown(formatar_vagas_cor(vagas, h), unsafe_allow_html=True)
 
-# === SELEÇÃO DO HORÁRIO ===
+# === Seleção do horário ===
 horario_escolhido = st.selectbox("Escolha um horário para reserva", horarios)
 
-# === BOTÃO DE RESERVA ===
+# === Botão de reserva ===
 if st.button("Reservar"):
     if not all([matricula, nome, departamento, email]):
         st.error("Por favor, preencha todos os campos antes de reservar.")
