@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import sqlite3
 
-CAMINHO_DB = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\reservas.db"
+CAMINHO_DB = "reservas.db"
 TABELA = "reservas"
 
 # ========== BANCO DE DADOS ==========
