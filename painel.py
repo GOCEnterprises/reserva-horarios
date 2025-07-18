@@ -15,17 +15,13 @@ else:
         df = pd.read_sql_query("SELECT * FROM reservas", conexao)
         conexao.close()
 
-        # Corrigir nome da coluna para minúsculo, como no banco
-        if "data" in df.columns:
-            df["data"] = pd.to_datetime(df["data"]).dt.date
-        else:
-            st.error("Coluna 'data' não encontrada no banco de dados.")
-            st.stop()
+        df["data"] = pd.to_datetime(df["data"]).dt.date
 
-        data_filtro = st.date_input("📅 Filtrar por data (opcional)", value=None)
+        # Comentei o filtro para testar a exibição direta
+        # data_filtro = st.date_input("📅 Filtrar por data (opcional)", value=None)
 
-        if data_filtro:
-            df = df[df["data"] == data_filtro]
+        # if data_filtro:
+        #     df = df[df["data"] == data_filtro]
 
         if df.empty:
             st.warning("⚠️ Nenhuma reserva para a data selecionada.")
