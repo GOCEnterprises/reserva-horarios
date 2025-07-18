@@ -2,30 +2,30 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
-from datetime import date
 
-CAMINHO_DB = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\reservas.db"
+CAMINHO_BANCO = r"C:\Users\r958351\OneDrive - voestalpine\CONTROLES\reserva\reservas.db"
 
-st.set_page_config(page_title="Painel de Reservas - Chefia", layout="centered")
 st.title("📊 Painel de Reservas - Chefia")
 
-if not os.path.exists(CAMINHO_DB):
+if not os.path.exists(CAMINHO_BANCO):
     st.warning("⚠️ Nenhuma reserva encontrada ainda!")
 else:
-    conn = sqlite3.connect(CAMINHO_DB)
-    df = pd.read_sql_query("SELECT * FROM reservas", conn)
-    conn.close()
+    try:
+        conexao = sqlite3.connect(CAMINHO_BANCO)
+        df = pd.read_sql_query("SELECT * FROM reservas", conexao)
+        conexao.close()
 
-    if df.empty:
-        st.warning("⚠️ Nenhuma reserva encontrada no banco de dados.")
-    else:
-        df["Data"] = pd.to_datetime(df["data"]).dt.date
-        df = df.drop(columns=["id"])  # opcional: remove o ID
+        # Corrigir nome da coluna para minúsculo, como no banco
+        if "data" in df.columns:
+            df["data"] = pd.to_datetime(df["data"]).dt.date
+        else:
+            st.error("Coluna 'data' não encontrada no banco de dados.")
+            st.stop()
 
         data_filtro = st.date_input("📅 Filtrar por data (opcional)", value=None)
 
         if data_filtro:
-            df = df[df["Data"] == data_filtro]
+            df = df[df["data"] == data_filtro]
 
         if df.empty:
             st.warning("⚠️ Nenhuma reserva para a data selecionada.")
@@ -35,3 +35,6 @@ else:
 
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("⬇️ Baixar CSV", data=csv, file_name="resumo_reservas.csv", mime='text/csv')
+
+    except Exception as e:
+        st.error(f"Erro ao acessar o banco de dados: {e}")
